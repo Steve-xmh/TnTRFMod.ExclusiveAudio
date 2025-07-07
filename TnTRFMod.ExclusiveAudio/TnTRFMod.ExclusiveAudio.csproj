@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <ModName>TnTRFMod.ExclusiveAudio</ModName>
+        <ModVersion>1.0.0</ModVersion>
+        <Description>Exclusive audio mod extracted from TnTRFMod for TnTRF.</Description>
+        <RestoreAdditionalProjectSources>
+            https://api.nuget.org/v3/index.json;
+            https://nuget.bepinex.dev/v3/index.json;
+            https://nuget.samboy.dev/v3/index.json
+        </RestoreAdditionalProjectSources>
+    </PropertyGroup>
+
+    <Target Name="UserFile" AfterTargets="PreBuildEvent">
+        <Copy
+                Condition="!Exists('.\$(MSBuildProjectDir)\$(ModName).csproj.user')"
+                SourceFiles="..\$(MSBuildProjectDir)\Resources\Template.csproj.user"
+                DestinationFiles=".\$(MSBuildProjectDir)\$(ModName).csproj.user"/>
+        <Error
+                Condition="$(GameDir)==''"
+                Text="Set the GameDir variable in .csproj.user file to your Rhythm Festival executable directory."/>
+    </Target>
+
+    <PropertyGroup>
+        <AssemblyName>net.stevexmh.$(ModName)</AssemblyName>
+        <Version>$(ModVersion)</Version>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <LangVersion>latest</LangVersion>
+        <RootNamespace>$(ModName)</RootNamespace>
+        <PackageId>TnTRFMod.ExclusiveAudio</PackageId>
+        <PackageVersion>$(ModVersion)</PackageVersion>
+        <PlatformTarget>x64</PlatformTarget>
+        <DebugType>embedded</DebugType>
+        <Optimize>true</Optimize>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.*" IncludeAssets="compile"/>
+        <PackageReference Include="MinHook.NET" Version="1.1.1"/>
+        <Reference Include="$(GameDir)\BepInEx\interop\*.dll" Private="false"/>
+    </ItemGroup>
+
+    <Target Name="PostBuildCopy" AfterTargets="PostBuildEvent" Condition="$(CopyOutputFiles) == true">
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(GameDir)\BepInEx\plugins\$(AssemblyName)"/>
+        <Copy SourceFiles="$(TargetDir)MinHook.NET.dll" DestinationFolder="$(GameDir)\BepInEx\plugins\$(AssemblyName)"/>
+        <Copy Condition="$(DefineConstants.Contains('DEBUG'))" SourceFiles="$(TargetDir)$(AssemblyName).pdb" DestinationFolder="$(GameDir)\BepInEx\plugins\$(AssemblyName)"/>
+    </Target>
+
+</Project>
