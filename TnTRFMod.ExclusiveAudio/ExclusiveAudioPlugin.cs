@@ -12,11 +12,11 @@ public class ExclusiveAudioPlugin : BasePlugin
 
     public static ExclusiveAudioPlugin Instance;
     public new static ManualLogSource Log;
-    
-    private ConfigEntry<bool> ConfigEnabled;
     public ConfigEntry<int> ConfigBitsPerSample;
-    public ConfigEntry<int> ConfigSampleRate;
     public ConfigEntry<bool> ConfigEnableCriWarePluginLogging;
+
+    private ConfigEntry<bool> ConfigEnabled;
+    public ConfigEntry<int> ConfigSampleRate;
 
     public override void Load()
     {

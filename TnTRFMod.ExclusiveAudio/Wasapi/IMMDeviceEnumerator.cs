@@ -2,15 +2,18 @@ using System.Runtime.InteropServices;
 
 namespace TnTRFMod.ExclusiveAudio.Wasapi;
 
-[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+[ComImport]
+[Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
 internal class MMDeviceEnumeratorComObject
 {
 }
 
-internal static class MMDeviceEnumeratorFactory {
-    private static readonly Guid MMDeviceEnumerator = new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E");
+internal static class MMDeviceEnumeratorFactory
+{
+    private static readonly Guid MMDeviceEnumerator = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
 
-    internal static IMMDeviceEnumerator CreateInstance() {
+    internal static IMMDeviceEnumerator CreateInstance()
+    {
 #pragma warning disable CA1416
         var type = Type.GetTypeFromCLSID(MMDeviceEnumerator);
 #pragma warning restore CA1416

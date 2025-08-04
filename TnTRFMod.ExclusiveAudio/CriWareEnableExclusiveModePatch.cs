@@ -64,17 +64,17 @@ public static class CriWareEnableExclusiveModePatch
         var handle = GetModuleHandle("cri_ware_unity.dll");
         var logCallbackPtr = new IntPtr((long)handle + 0x1802273F0L - 0x180000000L);
 
-        WriteMemory(logCallbackPtr, Marshal.GetFunctionPointerForDelegate(new CriWarePluginNative.OnCriAtomUnityLog(
-            (buffer, _, info, _) =>
-            {
-                var data1 = info.data1.ToString("X8");
-                var data2 = info.data2.ToString("X8");
-                var data3 = info.data3.ToString("X8");
+        WriteMemory(logCallbackPtr, Marshal.GetFunctionPointerForDelegate(
+            new CriWarePluginNative.OnCriAtomUnityLog((buffer, _, info, _) =>
+                {
+                    var data1 = info.data1.ToString("X8");
+                    var data2 = info.data2.ToString("X8");
+                    var data3 = info.data3.ToString("X8");
 
-                Logger.Info(
-                    $"[CriWareUnity] {buffer} ({data1}, {data2}, {data3})");
-            }
-        )));
+                    Logger.Info(
+                        $"[CriWareUnity] {buffer} ({data1}, {data2}, {data3})");
+                }
+            )));
     }
 
     private static bool CheckWaveFormat()
@@ -241,13 +241,15 @@ public static class CriWareEnableExclusiveModePatch
     {
         var configSampleRate = ExclusiveAudioPlugin.Instance.ConfigSampleRate.Value;
         var configBitsPerSample = (short)ExclusiveAudioPlugin.Instance.ConfigBitsPerSample.Value;
-        var format = new WaveFormat
+        var format = new WaveFormatEx
         {
             waveFormatTag = WaveFormatEncoding.Pcm,
             channels = 2,
             sampleRate = configSampleRate,
             bitsPerSample = configBitsPerSample,
-            extraSize = 0
+            extraSize = 22,
+            samples = configBitsPerSample, // Not used in this case
+            dwChannelMask = 0b11 // Front left and right
         };
         if (mixFormat != null)
         {
