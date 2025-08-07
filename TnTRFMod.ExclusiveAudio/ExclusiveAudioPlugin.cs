@@ -1,25 +1,36 @@
-﻿using BepInEx;
+﻿using System.Runtime.InteropServices;
+using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 
 namespace TnTRFMod.ExclusiveAudio;
 
-[BepInPlugin("net.stevexmh.TnTRFMod.ExclusiveAudio", ModName, "1.0.0")]
+[BepInPlugin("net.stevexmh.TnTRFMod.ExclusiveAudio", ModName, "1.1.0")]
 public class ExclusiveAudioPlugin : BasePlugin
 {
     public const string ModName = "TnTRFMod.ExclusiveAudio";
 
     public static ExclusiveAudioPlugin Instance;
     public new static ManualLogSource Log;
+    public ConfigEntry<short> ConfigAudioStreamPort;
     public ConfigEntry<int> ConfigBitsPerSample;
     public ConfigEntry<bool> ConfigEnableCriWarePluginLogging;
 
     private ConfigEntry<bool> ConfigEnabled;
     public ConfigEntry<int> ConfigSampleRate;
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleOutputCP(uint wCodePageID);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleCP(uint wCodePageID);
+
     public override void Load()
     {
+        SetConsoleOutputCP(65001);
+        SetConsoleCP(65001);
+
         Instance = this;
 
         ConfigEnabled = Config.Bind("General",
@@ -50,10 +61,19 @@ public class ExclusiveAudioPlugin : BasePlugin
             "Enable logging of CriWare Unity Plugin.\n" +
             "if you meet some audio issues, you can turn this on to check problems.");
 
+        ConfigAudioStreamPort = Config.Bind("General",
+            "AudioStreamPort",
+            (short)0,
+            "Port for the HTTP audio stream server.\n" +
+            "This is used to stream audio data over HTTP for capture/record/live streaming via OBS.\n" +
+            "If you have poor computer performance then this may have audio issue while playing.\n" +
+            "Set it to 0 to disable.");
+
         Log = base.Log;
 
         if (!ConfigEnabled.Value) return;
 
         CriWareEnableExclusiveModePatch.Apply();
+        HTTPAudioServer.Start();
     }
 }

@@ -57,6 +57,8 @@ internal class Logger
 #endif
                 break;
         }
+
+        Console.Out.Flush();
     }
 
     public static void Log(List<string> values, LogType type = LogType.Info)

@@ -47,8 +47,7 @@ internal interface IAudioClient3
 
     int SetEventHandle(IntPtr eventHandle);
 
-    [PreserveSig]
-    int GetService([In] [MarshalAs(UnmanagedType.LPStruct)] Guid interfaceId,
+    void GetService([In] [MarshalAs(UnmanagedType.LPStruct)] Guid interfaceId,
         [Out] [MarshalAs(UnmanagedType.IUnknown)]
         out object interfacePointer);
 

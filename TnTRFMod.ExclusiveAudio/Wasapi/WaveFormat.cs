@@ -61,12 +61,14 @@ public class WaveFormat
                $"AverageBytesPerSecond: {averageBytesPerSecond}, BlockAlign: {blockAlign}, BitsPerSample: {bitsPerSample}, " +
                $"ExtraSize: {extraSize}";
     }
-}
 
-[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 2)]
-public class WaveFormatExtensible : WaveFormat
-{
-    public short wValidBitsPerSample; // bits of precision, or is wSamplesPerBlock if wBitsPerSample==0
-    public int dwChannelMask; // which channels are present in stream
-    public Guid subFormat;
+    public WaveFormatEx? TryGetWaveFormatEx()
+    {
+        if (this is WaveFormatEx waveFormatEx) return waveFormatEx;
+
+        if (extraSize < 22) return null;
+
+        var waveFormatExtensible = Marshal.PtrToStructure<WaveFormatEx>(MarshalToPtr());
+        return waveFormatExtensible ?? null;
+    }
 }

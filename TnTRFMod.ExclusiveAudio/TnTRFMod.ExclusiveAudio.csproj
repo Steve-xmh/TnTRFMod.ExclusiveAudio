@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <ModName>TnTRFMod.ExclusiveAudio</ModName>
-        <ModVersion>1.0.0</ModVersion>
+        <ModVersion>1.1.0</ModVersion>
         <Description>Exclusive audio mod extracted from TnTRFMod for TnTRF.</Description>
         <RestoreAdditionalProjectSources>
             https://api.nuget.org/v3/index.json;
@@ -31,7 +31,7 @@
         <LangVersion>latest</LangVersion>
         <RootNamespace>$(ModName)</RootNamespace>
         <PackageId>TnTRFMod.ExclusiveAudio</PackageId>
-        <PackageVersion>$(ModVersion)</PackageVersion>
+        <PackageVersion>1.1.0</PackageVersion>
         <PlatformTarget>x64</PlatformTarget>
         <DebugType>embedded</DebugType>
         <Optimize>true</Optimize>
