@@ -19,24 +19,9 @@ public class WaveFormatEx : WaveFormat
     /// </summary>
     /// <param name="pointer">WaveFormatEx structure</param>
     /// <returns></returns>
-    public new static WaveFormatEx MarshalFromPtr(IntPtr pointer)
+    public new static WaveFormatEx? MarshalFromPtr(IntPtr pointer)
     {
-        var waveFormatEx = Marshal.PtrToStructure<WaveFormatEx>(pointer);
-        return waveFormatEx;
-    }
-
-    /// <summary>
-    ///     Helper function to retrieve a WaveFormat structure from a pointer
-    /// </summary>
-    /// <param name="pointer">WaveFormat structure</param>
-    /// <returns></returns>
-    public IntPtr MarshalToPtr()
-    {
-        var size = Marshal.SizeOf(this);
-        var ptr = Marshal.AllocHGlobal(size);
-        Marshal.StructureToPtr(this, ptr, false);
-
-        return ptr;
+        return Marshal.PtrToStructure<WaveFormatEx>(pointer);
     }
 
     public override string ToString()

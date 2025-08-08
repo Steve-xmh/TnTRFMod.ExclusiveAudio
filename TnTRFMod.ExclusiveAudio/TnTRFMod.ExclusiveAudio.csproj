@@ -40,13 +40,11 @@
 
     <ItemGroup>
         <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.*" IncludeAssets="compile"/>
-        <PackageReference Include="MinHook.NET" Version="1.1.1"/>
         <Reference Include="$(GameDir)\BepInEx\interop\*.dll" Private="false"/>
     </ItemGroup>
 
     <Target Name="PostBuildCopy" AfterTargets="PostBuildEvent" Condition="$(CopyOutputFiles) == true">
         <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(GameDir)\BepInEx\plugins\$(AssemblyName)"/>
-        <Copy SourceFiles="$(TargetDir)MinHook.NET.dll" DestinationFolder="$(GameDir)\BepInEx\plugins\$(AssemblyName)"/>
         <Copy Condition="$(DefineConstants.Contains('DEBUG'))" SourceFiles="$(TargetDir)$(AssemblyName).pdb" DestinationFolder="$(GameDir)\BepInEx\plugins\$(AssemblyName)"/>
     </Target>
 

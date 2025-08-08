@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
-using MinHook;
 using TnTRFMod.ExclusiveAudio.Wasapi;
 using AudioClientShareMode = TnTRFMod.ExclusiveAudio.Wasapi.AudioClientShareMode;
 using AudioClientStreamFlags = TnTRFMod.ExclusiveAudio.Wasapi.AudioClientStreamFlags;
@@ -12,7 +11,6 @@ namespace TnTRFMod.ExclusiveAudio;
 public static class CriWareEnableExclusiveModePatch
 {
     private const string CriWarePluginName = "Taiko no Tatsujin Rhythm Festival_Data/Plugins/x86_64/cri_ware_unity.dll";
-    private static HookEngine? engine;
 
     private static WaveFormat? mixFormat;
     private static WaveFormat? configuredFormat;
@@ -21,12 +19,6 @@ public static class CriWareEnableExclusiveModePatch
     private static CriWarePluginNative.IAudioClientInitializeHook? AudioClientInitializeHook_Original;
     private static CriWarePluginNative.IAudioRenderClientReleaseBufferHook? AudioRenderClientReleaseBufferHook_Original;
     private static CriWarePluginNative.IAudioRenderClientGetBufferHook? AudioRenderClientGetBufferHook_Original;
-
-    private static
-        IntPtr audioClientInitializeFuncPtr = IntPtr.Zero;
-
-    private static
-        IntPtr audioClientSetEventHandleFuncPtr = IntPtr.Zero;
 
     private static bool showedUnsupportedError;
 
@@ -45,19 +37,6 @@ public static class CriWareEnableExclusiveModePatch
         if (!CheckWaveFormat()) return;
         if (ExclusiveAudioPlugin.Instance.ConfigEnableCriWarePluginLogging.Value) EnableCriWareLogging();
 
-        engine = new HookEngine();
-
-        // criAtomUnity_Initialize_Original = engine.CreateHook("cri_ware_unity.dll", "CRIWARE2EA3E3EA",
-        //     new CriWarePluginNative.Initialize(criAtomUnity_Initialize_Hook));
-        if (audioClientInitializeFuncPtr == IntPtr.Zero)
-        {
-            Logger.Error("CriWareEnableExclusiveModePatch: audioClientInitializeFuncPtr is null");
-            return;
-        }
-
-        AudioClientInitializeHook_Original = engine.CreateHook(audioClientInitializeFuncPtr,
-            new CriWarePluginNative.IAudioClientInitializeHook(AudioClientInitializeHook));
-
         var targetFormat = GetWaveFormat();
         Logger.Info("Configured exclusive audio format:");
         PrintWaveFormatInfo(ref targetFormat);
@@ -67,7 +46,6 @@ public static class CriWareEnableExclusiveModePatch
         CriWarePluginNative.CriAtomWASAPI.SetAudioClientBufferDuration(bufferDuration);
         CriWarePluginNative.CriAtomWASAPI.SetAudioClientFormat(targetFormat.MarshalToPtr());
 
-        engine.EnableHooks();
         Logger.Message("Exclusive audio client feature is ready, waiting for initialization");
     }
 
@@ -118,14 +96,6 @@ public static class CriWareEnableExclusiveModePatch
                 return false;
             }
 
-            var comPtr = Marshal.GetComInterfaceForObject(audioClient, typeof(IAudioClient3));
-            var vtable = Marshal.ReadIntPtr(comPtr);
-            {
-                var ptrSize = Marshal.SizeOf<IntPtr>();
-                var start = Marshal.GetStartComSlot(typeof(IAudioClient3)) * ptrSize;
-                audioClientInitializeFuncPtr = Marshal.ReadIntPtr(vtable, start);
-            }
-
             audioClient.GetMixFormat(out var mixFormatPtr);
             mixFormat = WaveFormat.MarshalFromPtr(mixFormatPtr);
             Logger.Info("Shared mode mix format:");
@@ -133,6 +103,11 @@ public static class CriWareEnableExclusiveModePatch
 
             audioClient.GetDevicePeriod(out _, out var period);
             bufferDuration = new TimeSpan(period);
+
+            AudioClientInitializeHook_Original =
+                ComHookManager.HookFunction<IAudioClient3, CriWarePluginNative.IAudioClientInitializeHook>(
+                    audioClient, 0,
+                    AudioClientInitializeHook);
         }
         catch (COMException e)
         {
@@ -192,25 +167,27 @@ public static class CriWareEnableExclusiveModePatch
         Logger.Error("\t\t- SubFormat:         " + formatEx.subFormat);
     }
 
-    private static void SetupIAudioRenderClientReleaseBufferHook(IAudioClient3 audioClient)
+    private static void SetupIAudioRenderClientReleaseBufferHook(IntPtr pAudioClient)
     {
+        if (Marshal.GetObjectForIUnknown(pAudioClient) is not IAudioClient3 audioClient)
+        {
+            Logger.Error("Failed to get IAudioClient3 from pAudioClient!");
+            return;
+        }
+
         audioClient.GetService(typeof(IAudioRenderClient).GUID, out var renderClient);
 
+        AudioRenderClientGetBufferHook_Original =
+            ComHookManager.HookFunction<IAudioRenderClient, CriWarePluginNative.IAudioRenderClientGetBufferHook>(
+                renderClient, 0,
+                IAudioRenderClientGetBufferHook);
+        AudioRenderClientReleaseBufferHook_Original =
+            ComHookManager
+                .HookFunction<IAudioRenderClient, CriWarePluginNative.IAudioRenderClientReleaseBufferHook>(
+                    renderClient, 1,
+                    IAudioRenderClientReleaseBufferHook);
 
-        var comPtr = Marshal.GetComInterfaceForObject(renderClient, typeof(IAudioRenderClient));
-        var vtable = Marshal.ReadIntPtr(comPtr);
-        {
-            var ptrSize = Marshal.SizeOf<IntPtr>();
-            var start = Marshal.GetStartComSlot(typeof(IAudioRenderClient)) * ptrSize;
-            var getBufferFuncPtr = Marshal.ReadIntPtr(vtable, start);
-            AudioRenderClientGetBufferHook_Original = engine!.CreateHook(getBufferFuncPtr,
-                new CriWarePluginNative.IAudioRenderClientGetBufferHook(IAudioRenderClientGetBufferHook));
-            var releaseBufferFuncPtr = Marshal.ReadIntPtr(vtable, start + ptrSize);
-            AudioRenderClientReleaseBufferHook_Original = engine!.CreateHook(releaseBufferFuncPtr,
-                new CriWarePluginNative.IAudioRenderClientReleaseBufferHook(IAudioRenderClientReleaseBufferHook));
-            engine.EnableHook(AudioRenderClientGetBufferHook_Original);
-            engine.EnableHook(AudioRenderClientReleaseBufferHook_Original);
-        }
+        Marshal.ReleaseComObject(audioClient);
 
         Logger.Info("Setting up IAudioRenderClientReleaseBufferHook");
     }
@@ -241,7 +218,7 @@ public static class CriWareEnableExclusiveModePatch
                     Format = configuredFormat
                 });
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 // Logger.Error($"Failed to get audio buffer in IAudioRenderClientReleaseBufferHook: {e}");
             }
@@ -252,17 +229,18 @@ public static class CriWareEnableExclusiveModePatch
         return result;
     }
 
-    private static uint AudioClientInitializeHook(IAudioClient3 audioClient, AudioClientShareMode shareMode,
-        AudioClientStreamFlags streamFlags, TimeSpan hnsBufferDuration, TimeSpan hnsPeriodicity, WaveFormat pFormat,
-        ref Guid audioSessionGuid)
+    private static uint AudioClientInitializeHook(IntPtr pAudioClient, AudioClientShareMode shareMode,
+        AudioClientStreamFlags streamFlags, TimeSpan hnsBufferDuration, TimeSpan hnsPeriodicity, IntPtr pFormat,
+        IntPtr audioSessionGuid)
     {
         if (showedUnsupportedError)
-            return AudioClientInitializeHook_Original!(audioClient, AudioClientShareMode.Shared,
+            return AudioClientInitializeHook_Original!(pAudioClient, AudioClientShareMode.Shared,
                 streamFlags, TimeSpan.Zero, TimeSpan.Zero, pFormat,
-                ref audioSessionGuid);
+                audioSessionGuid);
 
+        var format = WaveFormat.MarshalFromPtr(pFormat);
         var duration = calibratedBufferDuration ?? bufferDuration;
-        var formatEx = pFormat.TryGetWaveFormatEx();
+        var formatEx = format.TryGetWaveFormatEx();
         if (formatEx != null)
         {
             formatEx.samples = Math.Min(formatEx.bitsPerSample, (short)24); // 强制将采样数设置为位深度
@@ -270,11 +248,14 @@ public static class CriWareEnableExclusiveModePatch
             formatEx.subFormat = PCM_SUBFORMAT; // 强制将音频格式设置为 PCM
         }
 
-        var finalFormat = formatEx ?? pFormat;
+        var finalFormat = formatEx ?? format;
+        var pFinalFormatPtr = finalFormat.MarshalToPtr();
 
-        var result = AudioClientInitializeHook_Original!(audioClient, shareMode,
-            streamFlags, duration, duration, finalFormat,
-            ref audioSessionGuid);
+        Logger.Message("Initializing exclusive audio client...");
+        var result = AudioClientInitializeHook_Original!(pAudioClient, shareMode,
+            streamFlags, duration, duration, pFinalFormatPtr,
+            audioSessionGuid);
+        Logger.Message($"Initilize result: 0x{result:X}...");
 
         switch (result)
         {
@@ -282,7 +263,7 @@ public static class CriWareEnableExclusiveModePatch
             {
                 Logger.Message("Exclusive audio client initialized successfully!");
                 configuredFormat = finalFormat;
-                SetupIAudioRenderClientReleaseBufferHook(audioClient);
+                SetupIAudioRenderClientReleaseBufferHook(pAudioClient);
                 return result;
             }
             case 0x8889000a:
@@ -292,11 +273,19 @@ public static class CriWareEnableExclusiveModePatch
             {
                 Logger.Warn("Inappropriate buffer size, recalculating buffer size...");
 
+                if (Marshal.GetObjectForIUnknown(pAudioClient) is not IAudioClient3 audioClient)
+                {
+                    Logger.Error("Failed to get IAudioClient3 from pAudioClient!");
+                    return result;
+                }
+
                 audioClient.GetBufferSize(out var frameSize);
                 var newBufferSize = 10000.0 * 1000 / finalFormat.sampleRate * frameSize + 0.5;
                 calibratedBufferDuration = TimeSpan.FromTicks((long)newBufferSize);
 
                 Logger.Warn($"New buffer duration: {calibratedBufferDuration}");
+
+                Marshal.ReleaseComObject(audioClient);
 
                 return result;
             }
@@ -322,9 +311,9 @@ public static class CriWareEnableExclusiveModePatch
         CriWarePluginNative.CriAtomWASAPI.SetAudioClientBufferDuration(TimeSpan.Zero);
         CriWarePluginNative.CriAtomWASAPI.SetAudioClientFormat(IntPtr.Zero);
 
-        return AudioClientInitializeHook_Original(audioClient, AudioClientShareMode.Shared,
-            streamFlags, TimeSpan.Zero, TimeSpan.Zero, finalFormat,
-            ref audioSessionGuid);
+        return AudioClientInitializeHook_Original(pAudioClient, AudioClientShareMode.Shared,
+            streamFlags, TimeSpan.Zero, TimeSpan.Zero, pFinalFormatPtr,
+            audioSessionGuid);
     }
 
     private static void WriteMemory<T>(IntPtr location, [DisallowNull] T value)
@@ -380,31 +369,31 @@ public static class CriWareEnableExclusiveModePatch
         public WaveFormat Format;
     }
 
-    private static class CriWarePluginNative
+    internal static class CriWarePluginNative
     {
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        public delegate uint IAudioClientInitializeHook(
-            [MarshalAs(UnmanagedType.Interface)] IAudioClient3 audioClient,
-            AudioClientShareMode shareMode,
-            AudioClientStreamFlags streamFlags,
-            TimeSpan hnsBufferDuration, // REFERENCE_TIME
-            TimeSpan hnsPeriodicity, // REFERENCE_TIME
-            [In] WaveFormat pFormat,
-            [In] ref Guid audioSessionGuid
+        public delegate void OnCriAtomUnityLog(string msgBuffer, int level, LoggingData info, IntPtr data);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        internal delegate uint IAudioClientInitializeHook(
+            IntPtr audioClient,
+            [In] AudioClientShareMode shareMode,
+            [In] AudioClientStreamFlags streamFlags,
+            [In] TimeSpan hnsBufferDuration, // REFERENCE_TIME
+            [In] TimeSpan hnsPeriodicity, // REFERENCE_TIME
+            IntPtr pFormat,
+            IntPtr audioSessionGuid
         );
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        public delegate int IAudioRenderClientGetBufferHook(
+        internal delegate int IAudioRenderClientGetBufferHook(
             [MarshalAs(UnmanagedType.Interface)] IAudioRenderClient audioRenderClient, uint NumFramesRequested,
             out IntPtr ppData);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        public delegate int IAudioRenderClientReleaseBufferHook(
+        internal delegate int IAudioRenderClientReleaseBufferHook(
             [MarshalAs(UnmanagedType.Interface)] IAudioRenderClient audioRenderClient, uint NumFramesWritten,
             int dwFlags);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        public delegate void OnCriAtomUnityLog(string msgBuffer, int level, LoggingData info, IntPtr data);
 
         public static class CriAtomWASAPI
         {

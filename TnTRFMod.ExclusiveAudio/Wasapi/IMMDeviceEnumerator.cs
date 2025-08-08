@@ -15,9 +15,8 @@ internal static class MMDeviceEnumeratorFactory
     internal static IMMDeviceEnumerator CreateInstance()
     {
 #pragma warning disable CA1416
-        var type = Type.GetTypeFromCLSID(MMDeviceEnumerator);
-#pragma warning restore CA1416
-        return (IMMDeviceEnumerator)Activator.CreateInstance(type);
+        var type = Type.GetTypeFromCLSID(MMDeviceEnumerator)!;
+        return (IMMDeviceEnumerator)Activator.CreateInstance(type)!;
     }
 }
 

@@ -36,10 +36,9 @@ public class WaveFormat
     /// <returns></returns>
     public static WaveFormat MarshalFromPtr(IntPtr pointer)
     {
-        var waveFormat = Marshal.PtrToStructure<WaveFormat>(pointer);
-
-        return waveFormat;
+        return Marshal.PtrToStructure<WaveFormat>(pointer)!;
     }
+
 
     /// <summary>
     ///     Helper function to retrieve a WaveFormat structure from a pointer
