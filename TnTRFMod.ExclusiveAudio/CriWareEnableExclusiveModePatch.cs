@@ -189,7 +189,7 @@ public static class CriWareEnableExclusiveModePatch
 
         Marshal.ReleaseComObject(audioClient);
 
-        Logger.Info("Setting up IAudioRenderClientReleaseBufferHook");
+        Logger.Info("Setup up IAudioRenderClientReleaseBufferHook");
     }
 
     private static int IAudioRenderClientGetBufferHook(IAudioRenderClient audioRenderClient, uint NumFramesRequested,
@@ -215,6 +215,7 @@ public static class CriWareEnableExclusiveModePatch
                 OnAudioData.Invoke(new OnAudioDataArgs
                 {
                     Data = waveBuffer,
+                    Timestamp = TimeSpan.FromTicks(DateTime.Now.Ticks),
                     Format = configuredFormat
                 });
             }
@@ -261,9 +262,12 @@ public static class CriWareEnableExclusiveModePatch
         {
             case 0:
             {
-                Logger.Message("Exclusive audio client initialized successfully!");
                 configuredFormat = finalFormat;
                 SetupIAudioRenderClientReleaseBufferHook(pAudioClient);
+                Logger.Message("Exclusive audio client initialized successfully!");
+                Logger.Info("    If the game crashed immediately after this, please restart the game and try again.");
+                Logger.Info(
+                    "    If the error still persists, please report the log file to developer or using a debugger to debug.");
                 return result;
             }
             case 0x8889000a:
@@ -366,6 +370,7 @@ public static class CriWareEnableExclusiveModePatch
     public struct OnAudioDataArgs
     {
         public byte[] Data;
+        public TimeSpan Timestamp;
         public WaveFormat Format;
     }
 

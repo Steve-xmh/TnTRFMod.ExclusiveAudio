@@ -14,6 +14,7 @@ public class ExclusiveAudioPlugin : BasePlugin
     public static ExclusiveAudioPlugin Instance;
     public new static ManualLogSource Log;
     public ConfigEntry<short> ConfigAudioStreamPort;
+    public ConfigEntry<int> ConfigAudioStreamTransferLatency;
     public ConfigEntry<int> ConfigBitsPerSample;
     public ConfigEntry<bool> ConfigEnableCriWarePluginLogging;
 
@@ -68,6 +69,12 @@ public class ExclusiveAudioPlugin : BasePlugin
             "This is used to stream audio data over HTTP for capture/record/live streaming via OBS.\n" +
             "If you have poor computer performance then this may have audio issue while playing.\n" +
             "Set it to 0 to disable.");
+        ConfigAudioStreamTransferLatency = Config.Bind("General",
+            "AudioStreamTransferLatency",
+            10,
+            "Transfer latency for the HTTP audio stream server. (In milliseconds)\n" +
+            "This is used to control the transfer latency of the audio stream.\n" +
+            "If the audio data that is being transferred is later than now by this value, then this data will be dropped to follow up the latency.");
 
         Log = base.Log;
 

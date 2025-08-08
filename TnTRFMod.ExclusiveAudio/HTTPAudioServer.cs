@@ -10,7 +10,10 @@ public static class HTTPAudioServer
     private static Task? _serverTask;
     private static CancellationTokenSource? _cancellationTokenSource;
     private static HttpListener? _listener;
-    private static readonly ConcurrentQueue<byte[]> AudioBufferQueue = new();
+
+    private static readonly List<ConcurrentQueue<CriWareEnableExclusiveModePatch.OnAudioDataArgs>> AudioBufferQueues =
+        new(1);
+
     private static readonly object QueueLock = new();
     private static int _port = 8090;
     private static bool _isRunning;
@@ -20,6 +23,7 @@ public static class HTTPAudioServer
     {
         if (_isRunning) return;
         _port = ExclusiveAudioPlugin.Instance.ConfigAudioStreamPort.Value;
+
         if (_port == 0) return;
 
         _cancellationTokenSource = new CancellationTokenSource();
@@ -48,7 +52,7 @@ public static class HTTPAudioServer
 
         lock (QueueLock)
         {
-            AudioBufferQueue.Clear();
+            AudioBufferQueues.Clear();
         }
 
         _isRunning = false;
@@ -58,14 +62,15 @@ public static class HTTPAudioServer
     {
         if (args.Data.Length == 0) return;
 
-        // 保存当前音频格式
-        _currentFormat = args.Format;
+        // 只在格式变化时更新音频格式，减少不必要的赋值操作
+        if (_currentFormat == null || !_currentFormat.Equals(args.Format)) _currentFormat = args.Format;
 
         // 将音频数据添加到队列
-        AudioBufferQueue.Enqueue(args.Data);
-
-        // 如果队列太长，删除旧数据
-        while (AudioBufferQueue.Count > 100) AudioBufferQueue.TryDequeue(out _);
+        lock (QueueLock)
+        {
+            foreach (var queue in AudioBufferQueues)
+                queue.Enqueue(args);
+        }
     }
 
     private static async Task RunServer(CancellationToken cancellationToken)
@@ -77,7 +82,8 @@ public static class HTTPAudioServer
             _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
             _listener.Start();
 
-            Logger.Message($"Audio HTTP Server has started, access this link to fetch audio stream: http://localhost:{_port}/audio.wav");
+            Logger.Message(
+                $"Audio HTTP Server has started, access this link to fetch audio stream: http://localhost:{_port}/audio.wav");
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -131,7 +137,9 @@ public static class HTTPAudioServer
             else if (requestPath == "/audio.wav")
             {
                 // 发送WAV流
+                Logger.Message($"Sending audio stream to client {context.Request.RemoteEndPoint}");
                 await SendAudioStreamAsync(response, cancellationToken);
+                Logger.Message($"Client {context.Request.RemoteEndPoint} disconnected");
             }
             else
             {
@@ -150,26 +158,28 @@ public static class HTTPAudioServer
             }
             catch
             {
-                // 忽略关闭响应时的错误
+                // ���略关闭响应时的错误
             }
         }
     }
 
     private static void SendInfoPage(HttpListenerResponse response)
     {
-        var html = $@"<!DOCTYPE html>
-<html>
-<head>
-    <title>TnTRFMod Exclusive Audio Streaming Server</title>
-    <meta charset=""utf-8"">
-</head>
-<body>
-    <h1>TnTRFMod Exclusive Audio Streaming Server</h1>
-    <p>Status: {(_isRunning ? "Running" : "Stopped")}</p>
-    <p>Audio Stream URL: <a href=""http://localhost:{_port}/audio.wav"">http://localhost:{_port}/audio.wav</a></p>
-    <p>Add this URL as media source to OBS to capture/record game audio.</p>
-</body>
-</html>";
+        var html = $"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>TnTRFMod Exclusive Audio Streaming Server</title>
+                        <meta charset="utf-8">
+                    </head>
+                    <body>
+                        <h1>TnTRFMod Exclusive Audio Streaming Server</h1>
+                        <p>Status: {(_isRunning ? "Running" : "Stopped")}</p>
+                        <p>Audio Stream URL: <a href="http://localhost:{_port}/audio.wav">http://localhost:{_port}/audio.wav</a></p>
+                        <p>Add this URL as media source to OBS to capture/record game audio.</p>
+                    </body>
+                    </html>
+                    """;
 
         var buffer = Encoding.UTF8.GetBytes(html);
         response.ContentType = "text/html; charset=utf-8";
@@ -180,6 +190,12 @@ public static class HTTPAudioServer
 
     private static async Task SendAudioStreamAsync(HttpListenerResponse response, CancellationToken cancellationToken)
     {
+        var queue = new ConcurrentQueue<CriWareEnableExclusiveModePatch.OnAudioDataArgs>();
+        lock (QueueLock)
+        {
+            AudioBufferQueues.Add(queue);
+        }
+
         try
         {
             response.ContentType = "audio/wav";
@@ -188,18 +204,44 @@ public static class HTTPAudioServer
 
             await using var outputStream = response.OutputStream;
             // 写入WAV头
-            await WriteWavHeaderAsync(outputStream);
+            await WriteWavHeaderAsync(outputStream, cancellationToken);
+            var dataChunkHeader = new byte[8];
+            var transferLatency = ExclusiveAudioPlugin.Instance.ConfigAudioStreamTransferLatency.Value;
 
             while (_isRunning)
-                if (AudioBufferQueue.TryDequeue(out var audioData))
+                if (queue.TryDequeue(out var audioData))
                 {
-                    await outputStream.WriteAsync(audioData, cancellationToken);
+                    if (DateTime.Now.Millisecond - audioData.Timestamp.Milliseconds >
+                        transferLatency)
+                    {
+                        Logger.Warn(
+                            $"Audio buffer is empty for over {transferLatency}ms, skipping audio buffer to keep up with current audio...");
+                        continue;
+                    }
+
+                    // 发送 "data" 区块头
+                    dataChunkHeader[0] = (byte)'d';
+                    dataChunkHeader[1] = (byte)'a';
+                    dataChunkHeader[2] = (byte)'t';
+                    dataChunkHeader[3] = (byte)'a';
+
+                    // 数据大小，以 audioData 的大小为准
+                    var dataSize = BitConverter.GetBytes(audioData.Data.Length);
+                    dataChunkHeader[4] = dataSize[0];
+                    dataChunkHeader[5] = dataSize[1];
+                    dataChunkHeader[6] = dataSize[2];
+                    dataChunkHeader[7] = dataSize[3];
+
+                    // 发送 data 区块头
+                    await outputStream.WriteAsync(dataChunkHeader, cancellationToken);
+
+                    // 发送音频数据
+                    await outputStream.WriteAsync(audioData.Data, cancellationToken);
                     await outputStream.FlushAsync(cancellationToken);
                 }
                 else
                 {
-                    // 没有数据时短暂等待
-                    await Task.Delay(5, cancellationToken);
+                    await Task.Yield();
                 }
         }
         catch (HttpListenerException)
@@ -219,10 +261,21 @@ public static class HTTPAudioServer
             catch
             {
             }
+
+            try
+            {
+                lock (QueueLock)
+                {
+                    AudioBufferQueues.Remove(queue);
+                }
+            }
+            catch
+            {
+            }
         }
     }
 
-    private static async Task WriteWavHeaderAsync(Stream stream)
+    private static async Task WriteWavHeaderAsync(Stream stream, CancellationToken cancellationToken)
     {
         _currentFormat ??= new WaveFormat
         {
@@ -235,7 +288,7 @@ public static class HTTPAudioServer
         };
 
         // RIFF头
-        var header = new byte[44];
+        var header = new byte[36]; // 修改为36字节，去掉data区块
 
         // "RIFF"标识
         header[0] = (byte)'R';
@@ -299,19 +352,7 @@ public static class HTTPAudioServer
         header[34] = bitsPerSample[0];
         header[35] = bitsPerSample[1];
 
-        // "data"子块
-        header[36] = (byte)'d';
-        header[37] = (byte)'a';
-        header[38] = (byte)'t';
-        header[39] = (byte)'a';
-
-        // 数据大小，未知，设为最大值
-        header[40] = 0xFF;
-        header[41] = 0xFF;
-        header[42] = 0xFF;
-        header[43] = 0xFF;
-
-        await stream.WriteAsync(header, 0, header.Length);
-        await stream.FlushAsync();
+        await stream.WriteAsync(header, cancellationToken);
+        await stream.FlushAsync(cancellationToken);
     }
 }
